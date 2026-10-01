@@ -187,47 +187,41 @@ function getSampleBookings(adminId) {
 // ═══════════════════════════════════════════════════════════════
 // MAIN SEEDER FUNCTION
 // ═══════════════════════════════════════════════════════════════
-async function seed() {
+async function seedData(isStandalone = true) {
   try {
-    const uri = process.env.MONGO_URI;
-    if (!uri) throw new Error('MONGO_URI not found in .env');
+    if (isStandalone) {
+      const uri = process.env.MONGO_URI;
+      if (!uri) throw new Error('MONGO_URI not found in .env');
 
-    console.log('🔗  Connecting to MongoDB...');
-    await mongoose.connect(uri);
-    console.log('✅  Connected to MongoDB\n');
+      console.log('🔗  Connecting to MongoDB...');
+      await mongoose.connect(uri);
+      console.log('✅  Connected to MongoDB\n');
+    }
 
     // ── Drop existing data ──────────────────────────────────
-    console.log('🗑️   Dropping existing collections...');
+    console.log('🗑️   Clearing existing collections...');
     await Promise.all([
       User.deleteMany({}),
       Room.deleteMany({}),
       Timetable.deleteMany({}),
       Booking.deleteMany({}),
     ]);
-    console.log('   → All collections cleared\n');
+    console.log('   → Collections cleared\n');
 
     // ── Seed Users ──────────────────────────────────────────
     console.log('👤  Seeding users...');
     const createdUsers = await User.create(USERS);
     console.log(`   → ${createdUsers.length} users created`);
-    createdUsers.forEach(u => console.log(`     • ${u.userId.padEnd(12)} ${u.role.padEnd(8)} ${u.name}`));
-    console.log();
 
     // ── Seed Rooms ──────────────────────────────────────────
     console.log('🏛️   Seeding facilities & labs...');
     const createdRooms = await Room.create(ROOMS);
     console.log(`   → ${createdRooms.length} rooms/labs/venues created`);
-    createdRooms.forEach(r => console.log(`     • ${r.roomId.padEnd(12)} ${r.institute.padEnd(8)} ${r.name} (${r.capacity} seats)`));
-    console.log();
 
     // ── Seed Timetable ──────────────────────────────────────
     console.log('📅  Seeding master timetable...');
     const createdEntries = await Timetable.insertMany(TIMETABLE_ENTRIES);
     console.log(`   → ${createdEntries.length} timetable entries created`);
-    const dayGroups = {};
-    createdEntries.forEach(e => { dayGroups[e.day] = (dayGroups[e.day] || 0) + 1; });
-    Object.entries(dayGroups).forEach(([day, count]) => console.log(`     • ${day}: ${count} entries`));
-    console.log();
 
     // ── Seed sample bookings ────────────────────────────────
     const admin = createdUsers.find(u => u.role === 'admin');
@@ -248,7 +242,6 @@ async function seed() {
       console.log(`   → ${createdBookings.length} sample bookings created\n`);
     }
 
-    // ── Summary ─────────────────────────────────────────────
     console.log('═══════════════════════════════════════════════');
     console.log('  ✅  DATABASE SEEDED SUCCESSFULLY');
     console.log('═══════════════════════════════════════════════');
@@ -259,15 +252,24 @@ async function seed() {
     console.log(`  Student PW: Student@123`);
     console.log('═══════════════════════════════════════════════\n');
 
-    await mongoose.disconnect();
-    console.log('🔌  MongoDB connection closed');
-    process.exit(0);
+    if (isStandalone) {
+      await mongoose.disconnect();
+      console.log('🔌  MongoDB connection closed');
+      process.exit(0);
+    }
+    return { success: true, users: createdUsers.length, rooms: createdRooms.length, entries: createdEntries.length };
   } catch (err) {
     console.error('\n❌  Seeding failed:', err.message);
-    console.error(err.stack);
-    await mongoose.disconnect();
-    process.exit(1);
+    if (isStandalone) {
+      await mongoose.disconnect();
+      process.exit(1);
+    }
+    throw err;
   }
 }
 
-seed();
+if (require.main === module) {
+  seedData(true);
+}
+
+module.exports = { seedData, USERS, ROOMS, TIMETABLE_ENTRIES };
