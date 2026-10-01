@@ -1,27 +1,43 @@
-const Room = require('../models/Room');
+const prisma = require('../lib/prisma');
 
 exports.recommendVenues = async (req, res) => {
   try {
-    const { minCapacity, requireAC } = req.query;
-    const capacity = parseInt(minCapacity, 10) || 0;
-    
-    const filter = { capacity: { $gte: capacity } };
+    const { minCapacity, requireAC, institute } = req.query;
+    const capacityInt = parseInt(minCapacity, 10) || 0;
+
+    const where = {
+      capacity: { gte: capacityInt }
+    };
+
     if (requireAC === 'true') {
-      filter.hasAC = true;
+      where.hasAC = true;
     }
-    
-    let rooms = await Room.find(filter).sort({ capacity: 1 }).lean();
-    
-    if (capacity >= 400) {
+
+    if (institute && institute !== 'ALL') {
+      where.institute = institute;
+    }
+
+    let rooms = await prisma.room.findMany({
+      where,
+      orderBy: { capacity: 'asc' }
+    });
+
+    // Smart logic: If event requires 400+ attendees, prioritize Auditoriums first
+    if (capacityInt >= 400) {
       rooms.sort((a, b) => {
         if (a.type === 'Auditorium' && b.type !== 'Auditorium') return -1;
         if (a.type !== 'Auditorium' && b.type === 'Auditorium') return 1;
-        return 0; 
+        return a.capacity - b.capacity;
       });
     }
-    
-    res.status(200).json({ success: true, data: rooms });
+
+    res.status(200).json({
+      success: true,
+      requestedCapacity: capacityInt,
+      recommendedCount: rooms.length,
+      data: rooms
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+    res.status(500).json({ success: false, message: 'Server error recommending event venues.', error: error.message });
   }
 };

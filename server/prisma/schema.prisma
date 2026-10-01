@@ -1,0 +1,85 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  student
+  admin
+}
+
+model User {
+  id         String    @id @default(uuid())
+  userId     String    @unique
+  name       String
+  password   String
+  role       Role      @default(student)
+  department String    @default("CSE")
+  batch      String    @default("")
+  bookings   Booking[]
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  @@index([userId])
+  @@map("users")
+}
+
+model Room {
+  id         String     @id @default(uuid())
+  roomId     String     @unique
+  name       String
+  institute  String
+  type       String
+  capacity   Int
+  hasAC      Boolean    @default(false)
+  floor      Int        @default(1)
+  bookings   Booking[]
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  @@index([institute])
+  @@index([capacity])
+  @@map("rooms")
+}
+
+model Timetable {
+  id          String   @id @default(uuid())
+  day         String
+  slotTime    String
+  courseCode  String
+  courseName  String
+  facultyName String
+  facultyCode String
+  roomId      String
+  batch       String   @default("Division-1")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([roomId, day, slotTime], name: "timetable_clash_unique")
+  @@index([facultyCode, day, slotTime])
+  @@index([day, slotTime])
+  @@map("timetables")
+}
+
+model Booking {
+  id           String   @id @default(uuid())
+  roomId       String
+  room         Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  bookedById   String
+  bookedBy     User     @relation(fields: [bookedById], references: [id], onDelete: Cascade)
+  date         DateTime
+  timeDuration String
+  purpose      String
+  clubName     String?  @default("")
+  notes        String?  @default("")
+  status       String   @default("Confirmed")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([roomId, date, status])
+  @@map("bookings")
+}

@@ -1,27 +1,38 @@
-const User = require('../models/User');
+const prisma = require('../lib/prisma');
 
 exports.searchStudents = async (req, res) => {
   try {
     const { q, batch } = req.query;
-    const filter = { role: 'student' };
-    
+    const where = {
+      role: 'student'
+    };
+
     if (q) {
-      filter.$or = [
-        { userId: { $regex: q, $options: 'i' } },
-        { name: { $regex: q, $options: 'i' } }
+      where.OR = [
+        { userId: { contains: q, mode: 'insensitive' } },
+        { name: { contains: q, mode: 'insensitive' } }
       ];
     }
-    
+
     if (batch) {
-      filter.batch = batch;
+      where.batch = batch;
     }
-    
-    const students = await User.find(filter)
-      .select('userId name batch department')
-      .limit(50);
-      
-    res.status(200).json({ success: true, data: students });
+
+    const students = await prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        userId: true,
+        name: true,
+        batch: true,
+        department: true
+      },
+      take: 50,
+      orderBy: { userId: 'asc' }
+    });
+
+    res.status(200).json({ success: true, count: students.length, data: students });
   } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error', error: error.message });
+    res.status(500).json({ success: false, message: 'Server error searching student records.', error: error.message });
   }
 };
