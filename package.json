@@ -4,11 +4,17 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
+    "start": "node server/server.js",
+    "postinstall": "prisma generate",
+    "prisma:migrate": "npx prisma migrate dev",
+    "prisma:seed": "node server/seed/seedDatabase.js",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
+    "@prisma/client": "^5.20.0",
+    "prisma": "^5.20.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "framer-motion": "^11.3.19",
