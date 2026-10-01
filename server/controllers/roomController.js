@@ -1,8 +1,14 @@
 const prisma = require('../lib/prisma');
+const {
+  parseAndNormalizeTime,
+  isTimeOverlapping,
+  getDayNameFromDate,
+  isSameRoom
+} = require('../lib/timeUtils');
 
 exports.getVacantRooms = async (req, res) => {
   try {
-    const { institute, day, timeSlot, date } = req.query;
+    const { institute, day, timeSlot, startTime, endTime, date } = req.query;
 
     const roomWhere = {};
     if (institute && institute !== 'ALL') {
@@ -14,20 +20,36 @@ exports.getVacantRooms = async (req, res) => {
       orderBy: { capacity: 'asc' }
     });
 
+    const targetDay = day || (date ? getDayNameFromDate(date) : null);
+    const hasTimeFilter = Boolean(timeSlot || (startTime && endTime));
+    const queryTime = hasTimeFilter
+      ? parseAndNormalizeTime(timeSlot, startTime, endTime)
+      : null;
+
     // 1. Check static schedule in Timetable
     const timetableWhere = {};
-    if (day) timetableWhere.day = day;
-    if (timeSlot) timetableWhere.slotTime = timeSlot;
+    if (targetDay && targetDay !== 'ANY') timetableWhere.day = targetDay;
 
     const scheduledClasses = await prisma.timetable.findMany({
       where: timetableWhere,
-      select: { roomId: true, courseCode: true, facultyName: true, batch: true }
+      select: { roomId: true, courseCode: true, facultyName: true, batch: true, slotTime: true }
     });
-    const occupiedRoomIds = new Set(scheduledClasses.map(t => t.roomId.toLowerCase()));
+
+    const occupiedRoomIds = new Set();
+    for (const sc of scheduledClasses) {
+      if (!hasTimeFilter) {
+        occupiedRoomIds.add(sc.roomId.toLowerCase());
+      } else {
+        const scTime = parseAndNormalizeTime(sc.slotTime);
+        if (isTimeOverlapping(scTime.startMin, scTime.endMin, queryTime.startMin, queryTime.endMin)) {
+          occupiedRoomIds.add(sc.roomId.toLowerCase());
+        }
+      }
+    }
 
     // 2. Check dynamic bookings
     const bookingWhere = { status: 'Confirmed' };
-    if (date) {
+    if (date && date !== 'ANY') {
       const d = new Date(date);
       if (!isNaN(d.getTime())) {
         const startOfDay = new Date(d);
@@ -37,20 +59,28 @@ exports.getVacantRooms = async (req, res) => {
         bookingWhere.date = { gte: startOfDay, lte: endOfDay };
       }
     }
-    if (timeSlot) {
-      bookingWhere.timeDuration = timeSlot;
-    }
 
     const activeBookings = await prisma.booking.findMany({
       where: bookingWhere,
-      select: { roomId: true, purpose: true, clubName: true }
+      select: { roomId: true, purpose: true, clubName: true, timeDuration: true, startTime: true, endTime: true }
     });
-    const bookedRoomIds = new Set(activeBookings.map(b => b.roomId));
+
+    const bookedRoomIds = new Set();
+    for (const b of activeBookings) {
+      if (!hasTimeFilter) {
+        bookedRoomIds.add(b.roomId);
+      } else {
+        const bTime = parseAndNormalizeTime(b.timeDuration, b.startTime, b.endTime);
+        if (isTimeOverlapping(bTime.startMin, bTime.endMin, queryTime.startMin, queryTime.endMin)) {
+          bookedRoomIds.add(b.roomId);
+        }
+      }
+    }
 
     // 3. Filter vacant rooms
     const vacantRooms = allRooms.filter(room => {
-      const isOccupiedInTimetable = occupiedRoomIds.has(room.roomId.toLowerCase());
-      const isBooked = bookedRoomIds.has(room.id);
+      const isOccupiedInTimetable = occupiedRoomIds.has(room.roomId.toLowerCase()) || occupiedRoomIds.has(room.id.toLowerCase());
+      const isBooked = bookedRoomIds.has(room.id) || bookedRoomIds.has(room.roomId);
       return !isOccupiedInTimetable && !isBooked;
     });
 
@@ -60,8 +90,8 @@ exports.getVacantRooms = async (req, res) => {
         totalRooms: allRooms.length,
         vacantCount: vacantRooms.length,
         institute: institute || 'ALL',
-        day: day || 'ANY',
-        timeSlot: timeSlot || 'ANY',
+        day: targetDay || 'ANY',
+        timeSlot: timeSlot || (queryTime ? queryTime.formattedDuration : 'ANY'),
         date: date || 'ANY'
       },
       data: vacantRooms
@@ -73,21 +103,22 @@ exports.getVacantRooms = async (req, res) => {
 
 exports.bookRoom = async (req, res) => {
   try {
-    const { roomId, date, timeDuration, purpose, clubName, notes } = req.body;
+    const { roomId, date, timeDuration, startTime, endTime, purpose, clubName, notes } = req.body;
 
-    if (!roomId || !date || !timeDuration || !purpose) {
+    if (!roomId || !date || (!timeDuration && (!startTime || !endTime)) || !purpose) {
       return res.status(400).json({
         success: false,
-        message: 'Room ID, date, time duration, and purpose are required.'
+        message: 'Room ID, date, time duration (or start/end time), and purpose are required.'
       });
     }
 
-    // Support both room primary key (UUID) and business key (roomId e.g. '506')
+    // Support both room primary key (UUID) and business key (roomId e.g. '506', 'AUD', 'Lab 631')
     const roomDoc = await prisma.room.findFirst({
       where: {
         OR: [
           { id: roomId },
-          { roomId: roomId }
+          { roomId: roomId },
+          { name: { equals: roomId, mode: 'insensitive' } }
         ]
       }
     });
@@ -101,50 +132,128 @@ exports.bookRoom = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Invalid date format provided.' });
     }
 
+    const reqTime = parseAndNormalizeTime(timeDuration, startTime, endTime);
+
+    if (reqTime.startMin >= reqTime.endMin) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid time duration: Start time must precede end time.'
+      });
+    }
+
     const startOfDay = new Date(bookingDate);
     startOfDay.setHours(0, 0, 0, 0);
     const endOfDay = new Date(bookingDate);
     endOfDay.setHours(23, 59, 59, 999);
 
-    // Prevent double booking for the exact date and duration
-    const existing = await prisma.booking.findFirst({
-      where: {
-        roomId: roomDoc.id,
-        date: { gte: startOfDay, lte: endOfDay },
-        timeDuration: timeDuration,
-        status: 'Confirmed'
+    // ── DATABASE-LEVEL CONFLICT CHECK & ATOMIC TRANSACTION ─────────────
+    // Executed in an interactive transaction to prevent race conditions
+    const newBooking = await prisma.$transaction(async (tx) => {
+      // 1. Conflict check against existing confirmed bookings for this room on this date
+      const existingBookings = await tx.booking.findMany({
+        where: {
+          roomId: roomDoc.id,
+          date: { gte: startOfDay, lte: endOfDay },
+          status: 'Confirmed'
+        },
+        include: {
+          bookedBy: {
+            select: { id: true, userId: true, name: true, role: true }
+          }
+        }
+      });
+
+      for (const ex of existingBookings) {
+        const exTime = parseAndNormalizeTime(ex.timeDuration, ex.startTime, ex.endTime);
+
+        // Core double-booking condition:
+        // existing.startTime < requested.endTime AND existing.endTime > requested.startTime
+        if (isTimeOverlapping(exTime.startMin, exTime.endMin, reqTime.startMin, reqTime.endMin)) {
+          const err = new Error('Slot Already Booked');
+          err.statusCode = 409;
+          err.conflictDetails = {
+            type: 'DYNAMIC_BOOKING_CONFLICT',
+            room: roomDoc.name,
+            roomId: roomDoc.roomId,
+            date: bookingDate.toISOString().split('T')[0],
+            timeSlot: ex.timeDuration || `${ex.startTime} - ${ex.endTime}`,
+            bookedBy: ex.bookedBy?.name || 'Another faculty member',
+            purpose: ex.purpose
+          };
+          throw err;
+        }
       }
+
+      // 2. Conflict check against master academic timetable for this day of week
+      const dayOfWeek = getDayNameFromDate(bookingDate);
+      const scheduledClasses = await tx.timetable.findMany({
+        where: {
+          day: dayOfWeek,
+          roomId: { in: [roomDoc.roomId, roomDoc.id] }
+        }
+      });
+
+      for (const sc of scheduledClasses) {
+        const scTime = parseAndNormalizeTime(sc.slotTime);
+        if (isTimeOverlapping(scTime.startMin, scTime.endMin, reqTime.startMin, reqTime.endMin)) {
+          const err = new Error('Slot Already Booked');
+          err.statusCode = 409;
+          err.conflictDetails = {
+            type: 'TIMETABLE_CLASS_CONFLICT',
+            room: roomDoc.name,
+            roomId: roomDoc.roomId,
+            date: bookingDate.toISOString().split('T')[0],
+            timeSlot: sc.slotTime,
+            bookedBy: `${sc.facultyName} (${sc.facultyCode})`,
+            purpose: `${sc.courseCode}: ${sc.courseName} (${sc.batch})`
+          };
+          throw err;
+        }
+      }
+
+      // 3. No conflict detected: create booking atomically
+      return await tx.booking.create({
+        data: {
+          roomId: roomDoc.id,
+          bookedById: req.user.id,
+          date: bookingDate,
+          timeDuration: reqTime.formattedDuration,
+          startTime: reqTime.sTime,
+          endTime: reqTime.eTime,
+          purpose: purpose,
+          clubName: clubName || '',
+          notes: notes || '',
+          status: 'Confirmed'
+        },
+        include: {
+          room: true,
+          bookedBy: {
+            select: { id: true, userId: true, name: true, role: true }
+          }
+        }
+      });
     });
 
-    if (existing) {
+    res.status(201).json({
+      success: true,
+      message: 'Room successfully booked.',
+      data: newBooking
+    });
+  } catch (error) {
+    if (error.statusCode === 409 || error.message === 'Slot Already Booked') {
       return res.status(409).json({
         success: false,
-        message: `Conflict: ${roomDoc.name} (${roomDoc.roomId}) is already booked for ${timeDuration} on ${bookingDate.toISOString().split('T')[0]}.`
+        error: 'Slot Already Booked',
+        message: 'This time slot has already been booked by another faculty. Please select another available slot.',
+        conflict: error.conflictDetails
       });
     }
 
-    const newBooking = await prisma.booking.create({
-      data: {
-        roomId: roomDoc.id,
-        bookedById: req.user.id,
-        date: bookingDate,
-        timeDuration: timeDuration,
-        purpose: purpose,
-        clubName: clubName || '',
-        notes: notes || '',
-        status: 'Confirmed'
-      },
-      include: {
-        room: true,
-        bookedBy: {
-          select: { id: true, userId: true, name: true, role: true }
-        }
-      }
+    res.status(500).json({
+      success: false,
+      message: 'Server error processing room booking.',
+      error: error.message
     });
-
-    res.status(201).json({ success: true, message: 'Room successfully booked.', data: newBooking });
-  } catch (error) {
-    res.status(500).json({ success: false, message: 'Server error processing room booking.', error: error.message });
   }
 };
 

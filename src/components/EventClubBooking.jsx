@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   PartyPopper, Search, Sliders, CheckCircle, Users,
-  Building2, Zap, X, Calendar, Clock, ChevronDown, Star
+  Building2, Zap, X, Calendar, Clock, ChevronDown, Star, AlertCircle
 } from 'lucide-react'
 import { CAMPUS_SPACES, CLUBS, BOOKING_PURPOSES } from '../data/charusat'
 import { useAuth, useBookings } from '../App'
@@ -79,18 +79,40 @@ function SpaceCard({ space, rank, onSelect, selected }) {
 
 // ── Booking confirmation card ─────────────────────────────────────
 function BookingForm({ space, onClose, onConfirm }) {
-  const [purpose,   setPurpose]   = useState('Club Activity')
-  const [clubId,    setClubId]    = useState('__none')
-  const [date,      setDate]      = useState(new Date().toISOString().split('T')[0])
-  const [startTime, setStartTime] = useState('16:30')
-  const [endTime,   setEndTime]   = useState('20:00')
-  const [headCount, setHeadCount] = useState('')
-  const [confirmed, setConfirmed] = useState(false)
+  const [purpose,       setPurpose]       = useState('Club Activity')
+  const [clubId,        setClubId]        = useState('__none')
+  const [date,          setDate]          = useState(new Date().toISOString().split('T')[0])
+  const [startTime,     setStartTime]     = useState('16:30')
+  const [endTime,       setEndTime]       = useState('20:00')
+  const [headCount,     setHeadCount]     = useState('')
+  const [confirmed,     setConfirmed]     = useState(false)
+  const [conflictError, setConflictError] = useState(null)
 
   function handleSubmit(e) {
     e.preventDefault()
+    setConflictError(null)
     const club = ALL_CLUBS.find(c => c.id === clubId)
-    onConfirm({ space: space.id, purpose, club: club?.name ?? null, date, startTime, endTime, headCount })
+    const result = onConfirm({
+      space: space.id,
+      spaceName: space.name,
+      purpose,
+      club: club?.name ?? null,
+      date,
+      startTime,
+      endTime,
+      timeDuration: `${startTime} - ${endTime}`,
+      headCount
+    })
+
+    if (result && result.success === false) {
+      setConflictError({
+        title: result.error || 'Slot Already Booked',
+        message: result.message || 'This time slot has already been booked by another faculty. Please select another available slot.',
+        conflict: result.conflict
+      })
+      return
+    }
+
     setConfirmed(true)
     setTimeout(onClose, 1400)
   }
@@ -161,20 +183,45 @@ function BookingForm({ space, onClose, onConfirm }) {
           <div className="grid grid-cols-3 gap-3">
             <div className="col-span-3 sm:col-span-1">
               <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 block">Date</label>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)}
+              <input type="date" value={date} onChange={e => { setDate(e.target.value); setConflictError(null); }}
                 className="w-full px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 block">Start</label>
-              <input type="time" value={startTime} onChange={e => setStartTime(e.target.value)}
+              <input type="time" value={startTime} onChange={e => { setStartTime(e.target.value); setConflictError(null); }}
                 className="w-full px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
             </div>
             <div>
               <label className="text-xs font-semibold text-slate-500 dark:text-slate-400 mb-1 block">End</label>
-              <input type="time" value={endTime} onChange={e => setEndTime(e.target.value)}
+              <input type="time" value={endTime} onChange={e => { setEndTime(e.target.value); setConflictError(null); }}
                 className="w-full px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 text-xs focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all" />
             </div>
           </div>
+
+          {/* Conflict Error Alert */}
+          <AnimatePresence>
+            {conflictError && (
+              <motion.div
+                initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -6 }}
+                className="p-3.5 rounded-xl bg-rose-50 dark:bg-rose-950/40 border-2 border-rose-300 dark:border-rose-800 text-rose-800 dark:text-rose-200 text-xs space-y-1.5 shadow-sm"
+              >
+                <div className="flex items-center gap-2 font-bold text-rose-700 dark:text-rose-400">
+                  <AlertCircle size={16} className="flex-shrink-0 text-rose-600 dark:text-rose-400" />
+                  <span className="text-sm">{conflictError.title}</span>
+                </div>
+                <p className="leading-relaxed font-medium">{conflictError.message}</p>
+                {conflictError.conflict && (
+                  <div className="mt-1 p-2 rounded-lg bg-rose-100/70 dark:bg-rose-900/30 text-[11px] text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800 font-mono">
+                    <div><strong>Slot:</strong> {conflictError.conflict.time || conflictError.conflict.timeDuration || conflictError.conflict.timeSlot}</div>
+                    <div><strong>Reserved by:</strong> {conflictError.conflict.bookedBy || 'Another Faculty'}</div>
+                    <div><strong>Purpose:</strong> {conflictError.conflict.purpose || 'Institutional Allocation'}</div>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           <motion.button
             type="submit"
@@ -341,7 +388,7 @@ export default function EventClubBooking() {
             space={selected}
             onClose={() => { setShowForm(false); setSelected(null) }}
             onConfirm={(details) => {
-              addBooking({ id: `EVT${Date.now()}`, bookedBy: role, ...details })
+              return addBooking({ id: `EVT${Date.now()}`, bookedBy: role, ...details })
             }}
           />
         )}

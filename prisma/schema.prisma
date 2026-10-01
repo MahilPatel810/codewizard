@@ -73,6 +73,8 @@ model Booking {
   bookedBy     User     @relation(fields: [bookedById], references: [id], onDelete: Cascade)
   date         DateTime
   timeDuration String
+  startTime    String?  @default("")
+  endTime      String?  @default("")
   purpose      String
   clubName     String?  @default("")
   notes        String?  @default("")
