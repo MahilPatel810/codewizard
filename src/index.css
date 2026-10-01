@@ -1,0 +1,114 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * { box-sizing: border-box; }
+  html { font-family: 'Plus Jakarta Sans', system-ui, sans-serif; }
+  body {
+    @apply bg-slate-50 text-slate-900;
+    @apply dark:bg-midnight dark:text-slate-50;
+    transition: background-color 0.3s ease, color 0.3s ease;
+  }
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { @apply bg-slate-300 dark:bg-slate-700 rounded-full; }
+}
+
+@layer components {
+  .glass {
+    @apply backdrop-blur-md bg-white/80 dark:bg-slate-900/80 border border-white/20 dark:border-slate-700/50;
+  }
+  .glass-card {
+    @apply bg-white dark:bg-surface border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm;
+  }
+  .pill-badge {
+    @apply inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold;
+  }
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl font-semibold text-sm text-white transition-all duration-200 hover:scale-[1.03] active:scale-[0.97] disabled:opacity-60 disabled:cursor-not-allowed;
+  }
+  .input-field {
+    @apply w-full px-4 py-3 rounded-xl bg-slate-100 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-900 dark:text-slate-100 placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-brand-student dark:focus:ring-brand-admin focus:border-transparent transition-all duration-200 text-sm;
+  }
+}
+
+/* ── AI Orb animations ── */
+@keyframes orbFloat {
+  0%,100% { transform: translateY(0) scale(1); filter: drop-shadow(0 0 12px rgba(99,102,241,0.5)); }
+  50%      { transform: translateY(-6px) scale(1.05); filter: drop-shadow(0 0 24px rgba(139,92,246,0.7)); }
+}
+@keyframes orbThink {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes scanLine {
+  0%   { top: 0%; opacity: 0.8; }
+  100% { top: 100%; opacity: 0; }
+}
+@keyframes waveBar {
+  0%,100% { height: 4px; }
+  50%      { height: 18px; }
+}
+@keyframes typingBounce {
+  0%,80%,100% { transform: scale(0.6); opacity: 0.4; }
+  40%          { transform: scale(1);   opacity: 1;   }
+}
+@keyframes chatSlideIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes gridPulse {
+  0%,100% { opacity: 0.03; }
+  50%      { opacity: 0.07; }
+}
+@keyframes rippleOut {
+  from { transform: scale(0.8); opacity: 0.6; }
+  to   { transform: scale(2.2); opacity: 0; }
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(20px) scale(0.95); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.orb-idle   { animation: orbFloat 4s ease-in-out infinite; }
+.orb-think  { animation: orbThink 1.2s linear infinite; }
+.wave-bar   { width: 3px; border-radius: 99px; background: linear-gradient(to top, #6366f1, #22d3ee); }
+.wave-bar:nth-child(1) { animation: waveBar 0.8s ease-in-out infinite 0s; }
+.wave-bar:nth-child(2) { animation: waveBar 0.8s ease-in-out infinite 0.12s; }
+.wave-bar:nth-child(3) { animation: waveBar 0.8s ease-in-out infinite 0.24s; }
+.wave-bar:nth-child(4) { animation: waveBar 0.8s ease-in-out infinite 0.12s; }
+.wave-bar:nth-child(5) { animation: waveBar 0.8s ease-in-out infinite 0s; }
+.typing-dot { width: 6px; height: 6px; border-radius: 50%; background: #818cf8; }
+.typing-dot:nth-child(1) { animation: typingBounce 1.2s ease-in-out infinite 0s; }
+.typing-dot:nth-child(2) { animation: typingBounce 1.2s ease-in-out infinite 0.2s; }
+.typing-dot:nth-child(3) { animation: typingBounce 1.2s ease-in-out infinite 0.4s; }
+.chat-bubble-anim { animation: chatSlideIn 0.35s cubic-bezier(0.34,1.56,0.64,1) both; }
+.animated-grid-bg { animation: gridPulse 4s ease-in-out infinite; }
+.ripple-ring { animation: rippleOut 2s ease-out infinite; }
+.toast-anim { animation: toastIn 0.4s cubic-bezier(0.34,1.56,0.64,1) both; }
+
+/* ── Timetable ── */
+.tt-cell {
+  transition: all 0.2s cubic-bezier(0.4,0,0.2,1);
+  cursor: pointer;
+}
+.tt-cell:hover {
+  transform: translateY(-2px) scale(1.02);
+  z-index: 10;
+  position: relative;
+}
+.tt-detail {
+  max-height: 0; overflow: hidden; opacity: 0;
+  transition: max-height 0.3s ease, opacity 0.3s ease;
+}
+.tt-cell:hover .tt-detail {
+  max-height: 80px; opacity: 1;
+}
+
+/* ── Floating dock active pip ── */
+.dock-pip {
+  transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
+}
